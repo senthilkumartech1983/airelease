@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Change Request Details</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
+        .container {
+            max-width: 600px;
+            margin: 30px auto;
+            padding: 25px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h2 { text-align: center; color: #333; margin-bottom: 25px; }
+        .detail-item {
+            display: flex;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed #eee;
+        }
+        .detail-item:last-of-type { /* Use :last-of-type for robustness if other divs appear */
+            border-bottom: none;
+        }
+        .detail-label {
+            flex: 1;
+            font-weight: bold;
+            color: #555;
+            padding-right: 15px;
+        }
+        .detail-value {
+            flex: 2;
+            color: #0056b3;
+            word-wrap: break-word;
+        }
+        .button-group {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .button-group button, .button-group a {
+            padding: 10px 20px;
+            margin: 0 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none; /* For the link-as-button */
+            display: inline-block; /* For buttons and links to sit side-by-side */
+            text-align: center;
+        }
+        .save-button {
+            background-color: #28a745; /* Green for save */
+            color: white;
+        }
+        .save-button:hover {
+            background-color: #218838;
+        }
+        .back-button {
+            background-color: #007bff; /* Blue for back */
+            color: white;
+        }
+        .back-button:hover {
+            background-color: #0056b3;
+        }
+        #message {
+            margin-top: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Change Request Details</h2>
+
+        <div class="detail-item">
+            <div class="detail-label">Incident Number:</div>
+            <div class="detail-value" id="incNumberValue">{{ data.incident_number | default('N/A') }}</div>
+        </div>
+
+        <div class="detail-item">
+            <div class="detail-label">Date:</div>
+            <div class="detail-value" id="dateValue">{{ data.date | default('N/A') }}</div>
+        </div>
+
+        <div class="detail-item">
+            <div class="detail-label">Start Time:</div>
+            <div class="detail-value" id="startTimeValue">{{ data.startTime | default('N/A') }}</div>
+        </div>
+
+        <div class="detail-item">
+            <div class="detail-label">End Time:</div>
+            <div class="detail-value" id="endTimeValue">{{ data.endTime | default('N/A') }}</div>
+        </div>
+
+        <div class="detail-item">
+            <div class="detail-label">Description:</div>
+            <div class="detail-value" id="descriptionValue">{{ data.description | default('N/A') }}</div>
+        </div>
+
+        <div class="detail-item">
+            <div class="detail-label">Approver:</div>
+            <div class="detail-value" id="approverValue">{{ data.approver | default('N/A') }}</div>
+        </div>
+
+        <div class="button-group">
+            <button class="save-button" onclick="saveChangeRequest()">Create CR</button>
+            <a href="{{ url_for('details') }}" class="back-button">Go Back to AI</a>
+        </div>
+
+        <div id="message"></div> </div>
+
+    <script>
+        async function saveChangeRequest() {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = ''; // Clear previous messages
+            messageDiv.className = ''; // Clear previous styles
+
+            const changeRequestData = {
+                incident_number: document.getElementById('incNumberValue').textContent,
+                date: document.getElementById('dateValue').textContent,
+                startTime: document.getElementById('startTimeValue').textContent,
+                endTime: document.getElementById('endTimeValue').textContent,
+                description: document.getElementById('descriptionValue').textContent,
+                approver: document.getElementById('approverValue').textContent
+            };
+
+            try {
+                const response = await fetch('/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(changeRequestData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success') {
+                    messageDiv.textContent = result.message;
+                    messageDiv.classList.add('success');
+                } else {
+                    throw new Error(result.message || 'Unknown error occurred.');
+                }
+            } catch (error) {
+                console.error('Error saving change request:', error);
+                messageDiv.textContent = 'Error: ' + error.message;
+                messageDiv.classList.add('error');
+            }
+        }
+    </script>
+</body>
+</html>

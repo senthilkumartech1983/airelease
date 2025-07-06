@@ -3,6 +3,14 @@ import os
 import json
 import re
 from flask import Flask, request, jsonify, render_template
+from datetime import datetime
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+#from werkzeug.security import generate_password_hash, check_password_hash
+import os
+import mysql.connector # Import the MySQL connector library
+from flask import Flask, request, jsonify, render_template
+import os
+import streamlit as st
 
 def extract_incident_details(user_text: str):
     """
@@ -23,14 +31,16 @@ def extract_incident_details(user_text: str):
     prompt = f"""
     **Instruction:**
     From the user-provided text below, extract the following details:
-    1. "incident_number"
+    1. "incident_number" (it can be either one of INC number or RITM request number or JIRA number, priority is INC, then JIRA, then RITM)
     2. "date"
     3. "startTime"
     4. "endTime"
     5. "description" (a concise summary of the request/issue and don't include date, start time, end time and approver)
 
-    Please provide the output in a clean JSON format.
+    Current date time is {datetime.now()}
 
+    Please provide the output in a clean JSON format.
+     
     **Example Input Text:**
     "The file server went down on May 20th, 2024 between 2pm and 3pm. The ticket for this is TCK-58219. It caused a major outage for the entire finance department."
 
@@ -75,23 +85,162 @@ APPROVERS_DB = {
     "itopslead": "IT Operations Lead (Automated Approval)" # Example for a role/alias
 }
 
+# Define the UserManager class to handle database interactions for users
+class UserManager:
+    def __init__(self, db_config):
+        self.db_config = db_config
 
-# Route to serve the HTML file
+    def _get_db_connection(self):
+        """Helper to establish a connection to the MySQL database."""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            return conn
+        except mysql.connector.Error as err:
+            print(f"Error connecting to MySQL: {err}")
+            return None
+
+    def _close_db_connection(self, conn, cursor=None):
+        """Helper to close database cursor and connection."""
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+    def validate_user(self, username, password):
+        """
+        Validates a user's credentials against the database.
+        Returns True if credentials are valid, False otherwise.
+        """
+        conn = self._get_db_connection()
+        if conn:
+            cursor = conn.cursor(dictionary=True) # Get results as dictionaries
+            try:
+                cursor.execute("SELECT pass FROM users WHERE user_id = %s", (username,))
+                user_record = cursor.fetchone()
+                print(f"DB result for user '{username}': {user_record}")
+                if user_record and user_record['pass'] == password:
+                   return True
+                else:
+                   return False
+            except mysql.connector.Error as err:
+                print(f"Error validating user '{username}': {err}")
+                return False
+            finally:
+                self._close_db_connection(conn, cursor)
+        return False # Return False if database connection fails
+    
+    def save_changerequests(self, incnumber):
+        """
+        Validates a user's credentials against the database.
+        Returns True if credentials are valid, False otherwise.
+        """
+        conn = self._get_db_connection()
+        if conn:
+            cursor = conn.cursor(dictionary=True) # Get results as dictionaries
+            try:
+                sql_insert_query = """
+                                INSERT INTO changerequests (cr_squad_owner,cr_description, cr_ref_number,cr_date, cr_starttime, cr_endtime, cr_approver,cr_creation_date,cr_modify_date)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) """
+                record_tuple = ('ABC','CR description', incnumber, datetime.now(),'2pm', '2pm', '123',datetime.now(),datetime.now());
+                #cursor.execute("INSERT INTO changerequests (cr_description,cr_ref_number,cr_starttime,cr_endtime,cr_approver) = %s %s %s %s %s", ("abcd ",))
+                cursor.execute(sql_insert_query, record_tuple)
+                conn.commit()
+                return True
+            except mysql.connector.Error as err:
+                print(f"Error while save : {err}")
+                return False
+            finally:
+                self._close_db_connection(conn, cursor)
+        return False # Return False if database connection fails
+
+# --- Flask Application Setup ---
+app = Flask(__name__)
+app.secret_key = os.urandom(24) # Secret key for session management
+
+# --- MySQL Database Configuration ---
+# IMPORTANT: Replace these with your actual MySQL database credentials.
+# For production, these should be stored securely (e.g., environment variables).
+DB_CONFIG = {
+    'host': 'localhost', # Or your MySQL server IP/hostname
+    'user': 'root', # Your MySQL username
+    'password': '365536', # Your MySQL password
+    'database': 'changemanagement' # The name of your database
+}
+
+# Create an instance of UserManager
+user_manager = UserManager(DB_CONFIG)
+
 @app.route('/')
 def index():
-    return render_template('index.html')
+    """
+    The root route. Checks if a user is already logged in.
+    If logged in, redirects to the details; otherwise, redirects to the login page.
+    """
+    if 'username' in session:
+        return redirect(url_for('details'))
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """
+    Handles user login.
+    - GET request: Displays the login form.
+    - POST request: Processes the submitted username and password.
+    """
+    if 'username' in session:
+        return redirect(url_for('details'))
+
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        # Use the UserManager to validate credentials
+        if user_manager.validate_user(username, password):
+            session['username'] = username 
+            flash('Login successful!', 'success') 
+            return redirect(url_for('details'))
+        else:
+            flash('Invalid username or password.', 'danger')
+            return render_template('login.html', username=username)
+    
+    return render_template('login.html')
+
+@app.route('/details')
+def details():
+    """
+    The protected details page.
+    Only accessible if the user is logged in (i.e., 'username' is in the session).
+    """
+    if 'username' in session:
+        return render_template('details.html', username=session['username'])
+    else:
+        flash('Please log in to access this page.', 'warning')
+        return redirect(url_for('login'))
+
+@app.route('/logout')
+def logout():
+    """
+    Handles user logout.
+    Removes the 'username' from the session, effectively logging the user out.
+    """
+    session.pop('username', None) 
+    flash('You have been logged out.', 'info') 
+    return redirect(url_for('login'))
 
 # Route to handle the data submission from the HTML form
 @app.route('/process_data', methods=['POST'])
 def process_data():
+    
     if request.is_json:
         data = request.get_json()
+        action = data.get('action')
+        print(f"action is : {action}")
         input1 = data.get('input1')
                 # --- Your Python Logic Here ---
         # Example: Concatenate the inputs or perform a calculation
         if input1 :
             # output_message = extract_incident_details({input1})
-            extracted_data = extract_incident_details({input1})
+            extracted_data = extract_incident_details(input1)
         else:
             extracted_data = "Please provide input text"
         # --- End of Your Python Logic ---
@@ -140,13 +289,40 @@ def process_data():
         }
 
     # Return the full JSON object
-    return jsonify(output_data)
+    #return jsonify(output_data)
 
     # Return a JSON response
-    return jsonify(output=output_string_for_frontend) # The JS expects 'output' as the key
+    #return jsonify(output=output_string_for_frontend) # The JS expects 'output' as the key
+    print("About to call render_template for save.html")
+    # Store output_data in the session so save.html can access it
+    session['change_data'] = output_data
 
+    # Return a success message (JSON) to the client
+    # The client-side JavaScript will then perform the redirect
+    return jsonify({"status": "success", "redirect_url": url_for('show_save_page')})
+    
     #return jsonify(output=extracted_data)
     #return render_template('display.html', data=output_data)
+# A new route to render save.html, which will retrieve data from the session
+@app.route('/save_page')
+def show_save_page():
+    # Retrieve data from the session
+    dashboard_data = session.pop('change_data', None) # .pop removes it after use
+
+    if dashboard_data:
+        return render_template('save.html', data=dashboard_data)
+    else:
+        # Handle cases where direct access or session expired
+        return redirect(url_for('some_error_or_default_page')) # Or render an error template
+
+@app.route('/save', methods=['POST'])
+def save():
+    if request.is_json:
+        data = request.get_json()
+        incnumber = data.get('incident_number')  
+        print(f"INC number passed is : {incnumber}") 
+        user_manager.save_changerequests(incnumber)
+        return True
     
 if __name__ == '__main__':
     # Ensure the 'templates' folder exists in the same directory as app.py
