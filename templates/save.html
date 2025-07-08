@@ -89,6 +89,11 @@
         </div>
 
         <div class="detail-item">
+            <div class="detail-label">Squad Name:</div>
+            <div class="detail-value" id="squadValue">"Beta"</div>
+        </div>
+
+        <div class="detail-item">
             <div class="detail-label">Start Time:</div>
             <div class="detail-value" id="startTimeValue">{{ data.startTime | default('N/A') }}</div>
         </div>
@@ -104,9 +109,11 @@
         </div>
 
         <div class="detail-item">
-            <div class="detail-label">Approver:</div>
-            <div class="detail-value" id="approverValue">{{ data.approver | default('N/A') }}</div>
+            <div class="detail-label">Approver Name:</div>
+            <div class="detail-value" id="approverValue">{{ data.approverName | default('N/A') }}</div>
         </div>
+
+        <input type="hidden" id="approverIdValue" value="{{ data.approverId | default('') }}">
 
         <div class="button-group">
             <button class="save-button" onclick="saveChangeRequest()">Create CR</button>
@@ -127,7 +134,8 @@
                 startTime: document.getElementById('startTimeValue').textContent,
                 endTime: document.getElementById('endTimeValue').textContent,
                 description: document.getElementById('descriptionValue').textContent,
-                approver: document.getElementById('approverValue').textContent
+                approver: document.getElementById('approverValue').textContent,
+                approverId: document.getElementById('approverIdValue').value
             };
 
             try {

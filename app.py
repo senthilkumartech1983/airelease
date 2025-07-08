@@ -36,13 +36,14 @@ def extract_incident_details(user_text: str):
     3. "startTime"
     4. "endTime"
     5. "description" (a concise summary of the request/issue and don't include date, start time, end time and approver)
+    6. "approver"
 
     Current date time is {datetime.now()}
 
     Please provide the output in a clean JSON format.
      
     **Example Input Text:**
-    "The file server went down on May 20th, 2024 between 2pm and 3pm. The ticket for this is TCK-58219. It caused a major outage for the entire finance department."
+    "The file server went down on May 20th, 2024 between 2pm and 3pm. The ticket for this is TCK-58219. It caused a major outage for the entire finance department. approver is ramesh."
 
     **Example JSON Output:**
     {{
@@ -51,6 +52,7 @@ def extract_incident_details(user_text: str):
       "startTime": "2pm",
       "endTime": "3pm",
       "description": "The file server went down, causing a major outage for the finance department."
+      "approver": "ramesh"
     }}
 
     ---
@@ -119,7 +121,7 @@ class UserManager:
                 user_record = cursor.fetchone()
                 print(f"DB result for user '{username}': {user_record}")
                 if user_record and user_record['pass'] == password:
-                   return True
+                   return user_record
                 else:
                    return False
             except mysql.connector.Error as err:
@@ -129,7 +131,7 @@ class UserManager:
                 self._close_db_connection(conn, cursor)
         return False # Return False if database connection fails
     
-    def save_changerequests(self, incnumber):
+    def checkApproverAvailable(self, approverName):
         """
         Validates a user's credentials against the database.
         Returns True if credentials are valid, False otherwise.
@@ -138,10 +140,77 @@ class UserManager:
         if conn:
             cursor = conn.cursor(dictionary=True) # Get results as dictionaries
             try:
+                print(f"DB result for user '{approverName}': ")
+                cursor.execute("SELECT user_id FROM users WHERE fullname LIKE %s", ( approverName,))
+                
+                result = cursor.fetchone()
+                print(f"Raw result from fetchone(): {result}")
+
+                if result:
+                    user_id = result['user_id']
+                    print(f"Found user_id: {user_id}")
+                    return result['user_id']
+                else:
+                    print("No user found matching the criteria.")
+                    return None
+
+                #cursor.execute("SELECT user_id FROM users WHERE fullname LIKE 'ramesh'")
+                #user_record = cursor.fetchone()
+                #print(f"DB result for user '{approverName}': {user_record}")
+                #if user_record:
+                #   return user_record
+                #else:
+                #   return False
+            except mysql.connector.Error as err:
+                print(f"Error validating user '{approverName}': {err}")
+                return False
+            finally:
+                self._close_db_connection(conn, cursor)
+        return False # Return False if database connection fails
+    
+    def save_changerequests(self, data):
+        """
+        Validates a user's credentials against the database.
+        Returns True if credentials are valid, False otherwise.
+        """
+        if data.get('incident_number'):
+            incnumber = data.get('incident_number')
+        else: 
+            incnumber = "N/A"
+        
+        if data.get('date'):
+            date = data.get('date')
+        else: 
+            date = datetime.now().date
+        
+        if data.get('startTime'):
+            startTime = data.get('startTime')
+        else: 
+            startTime = datetime.now().hour
+        
+        if data.get('endTime'):
+            endTime = data.get('endTime')
+        else: 
+            endTime = datetime.now().hour+2
+        
+        if data.get('description'):
+            description = data.get('description')
+        else: 
+            description = "N/A"
+
+        if data.get('approverId'):
+            approverId = data.get('approverId')
+        else: 
+            approverId = "123"    
+
+        conn = self._get_db_connection()
+        if conn:
+            cursor = conn.cursor(dictionary=True) # Get results as dictionaries
+            try:
                 sql_insert_query = """
                                 INSERT INTO changerequests (cr_squad_owner,cr_description, cr_ref_number,cr_date, cr_starttime, cr_endtime, cr_approver,cr_creation_date,cr_modify_date)
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) """
-                record_tuple = ('ABC','CR description', incnumber, datetime.now(),'2pm', '2pm', '123',datetime.now(),datetime.now());
+                record_tuple = ('Beta',description, incnumber, date,startTime, endTime, approverId,datetime.now(),datetime.now());
                 #cursor.execute("INSERT INTO changerequests (cr_description,cr_ref_number,cr_starttime,cr_endtime,cr_approver) = %s %s %s %s %s", ("abcd ",))
                 cursor.execute(sql_insert_query, record_tuple)
                 conn.commit()
@@ -244,20 +313,24 @@ def process_data():
         else:
             extracted_data = "Please provide input text"
         # --- End of Your Python Logic ---
-              
+        approverName = extracted_data.get('approver')
+        approverUserId = user_manager.checkApproverAvailable(approverName)
+        #approverUserId = appData.get('user_id')
         # --- Approver Extraction and Lookup ---
         # Look for patterns like "approved by [Name/Alias]" or "approver [Name/Alias]"
-        approver_alias = "Not found"
+        #approver_alias = "Not found"
         #approver_match = re.search(r'(?:approved by|approver):?\s*([\w\s\.]+)', input1, re.IGNORECASE) # Correct: input_text is used directly
-        approver_match = re.search(r'(?:approved by|approver)\s+is\s*([\w\s\.]+)', input1, re.IGNORECASE)
-        if approver_match:
-            print(f"regext match")
-            extracted_alias = approver_match.group(1).strip().lower() # Convert to lowercase for lookup
-            print(f"regext match: {extracted_alias}")
+        #approver_match = re.search(r'(?:approved by|approver)\s+is\s*([\w\s\.]+)', input1, re.IGNORECASE)
+        #if approver_match:
+            #print(f"regext match")
+            #extracted_alias = approver_match.group(1).strip().lower() # Convert to lowercase for lookup
+            #print(f"regext match: {extracted_alias}")
             # Attempt to find the exact approver name in our mock DB
-            approver = APPROVERS_DB.get(extracted_alias, "Not found in DB")
-        else:
-            approver = APPROVERS_DB.get("itopslead", "Not found in DB") # If no pattern found in text
+            # approver = APPROVERS_DB.get(extracted_alias, "Not found in DB")
+            #approver = user_manager.checkApproverAvailable(extracted_alias)
+        #else:
+            #approver = APPROVERS_DB.get("itopslead", "Not found in DB") # If no pattern found in text
+            #print("")
 
         print("\n--- Extracted Details ---")
         if "error" in extracted_data:
@@ -269,7 +342,9 @@ def process_data():
             print(f"**StartTime:** {extracted_data.get('startTime', 'Not found')}")
             print(f"**EndTime:** {extracted_data.get('endTime', 'Not found')}")
             print(f"**Description:** {extracted_data.get('description', 'Not found')}")
-            print(f"**Approver:** {approver}")
+            print(f"**Approver:** {extracted_data.get('approver', 'Not found')}")
+            print(f"**ApproverId:**", approverUserId)
+            
         print("-------------------------\n")
     
     # Format the extracted data into a single string for display in the 'output' div
@@ -285,7 +360,8 @@ def process_data():
             "startTime": extracted_data.get('startTime', 'Not found'),
             "endTime": extracted_data.get('endTime', 'Not found'),
             "description": extracted_data.get('description', 'Not found'),
-            "approver": approver
+            "approverName": extracted_data.get('approver', 'Not found'),
+            "approverId": approverUserId,
         }
 
     # Return the full JSON object
@@ -313,15 +389,19 @@ def show_save_page():
         return render_template('save.html', data=dashboard_data)
     else:
         # Handle cases where direct access or session expired
-        return redirect(url_for('some_error_or_default_page')) # Or render an error template
+        return redirect(url_for('details')) # Or render an error template
 
 @app.route('/save', methods=['POST'])
 def save():
     if request.is_json:
         data = request.get_json()
         incnumber = data.get('incident_number')  
+        approverId = data.get('approverId')  
         print(f"INC number passed is : {incnumber}") 
-        user_manager.save_changerequests(incnumber)
+        print(f"approverId is : {approverId}")
+        userid =session['username']
+        print(f"user id logged in is : {userid}")
+        user_manager.save_changerequests(data)
         return True
     
 if __name__ == '__main__':
