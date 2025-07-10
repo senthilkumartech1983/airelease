@@ -5,87 +5,157 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Change Request Dashboard</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
-        .container { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); max-width: 90%; margin: auto; }
-        h1 { color: #333; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 900px; /* Increased max-width for better table display */
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h2 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            word-wrap: break-word; /* Ensures long text breaks to new lines */
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .message {
+            text-align: center;
+            color: #666;
+            margin-top: 20px;
+        }
         .back-button {
-            padding: 10px 20px;
+            display: block;
+            width: fit-content;
+            margin: 20px auto 0;
             background-color: #6c757d;
             color: white;
+            padding: 10px 20px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 16px;
-            margin-bottom: 20px;
+            text-decoration: none; /* For anchor tags if used */
         }
         .back-button:hover {
             background-color: #5a6268;
-        }
-        .flash-message {
-            padding: 10px;
-            margin-bottom: 15px;
-            border-radius: 4px;
-            font-weight: bold;
-        }
-        .flash-message.error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Change Request Dashboard</h1>
+        <h2>Welcome to Your Dashboard, <span id="usernameDisplay">Guest</span>!</h2>
+        <p class="message" id="loadingMessage">Loading your Change Requests...</p>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    {% if category == 'error' %} {# Only display errors on dashboard for now #}
-                        <div class="flash-message {{ category }}">{{ message }}</div>
-                    {% endif %}
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-
-        <button type="button" class="back-button" onclick="location.href='/details'">Back to Details Input</button>
-
-        {% if change_requests %}
-            <table>
+        <div id="changeRequestTableContainer" style="display: none;"> <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
-                        <th>Incident No.</th>
+                        <th>CR Number</th>
+                        <th>CR Ref Number</th>
+                        <th>Description</th>
                         <th>Change Date</th>
-                        <th>Change Time</th>
-                        <th>Approver</th>
-                        <th>Prompt</th>
-                        <th>AI Output</th>
+                        <th>Status</th>
                         <th>Created At</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for request in change_requests %}
-                    <tr>
-                        <td>{{ request.id }}</td>
-                        <td>{{ request.incident_number }}</td>
-                        <td>{{ request.change_date.strftime('%Y-%m-%d') }}</td>
-                        <td>{{ request.change_time.strftime('%H:%M') }}</td>
-                        <td>{{ request.approver }}</td>
-                        <td>{{ request.prompt }}</td>
-                        <td>{{ request.output }}</td>
-                        <td>{{ request.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
+                <tbody id="crTableBody">
+                    </tbody>
             </table>
-        {% else %}
-            <p>No change requests found yet.</p>
-        {% endif %}
+        </div>
+
+        <p class="message" id="noCrMessage" style="display: none;">No Change Requests found.</p>
+
+        <button class="back-button" onclick="location.href='/'">Go Back to Details Page</button>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async function() {
+            const usernameDisplay = document.getElementById('usernameDisplay');
+            const loadingMessage = document.getElementById('loadingMessage');
+            const noCrMessage = document.getElementById('noCrMessage');
+            const crTableBody = document.getElementById('crTableBody');
+            const crTableContainer = document.getElementById('changeRequestTableContainer');
+
+            // Set username from the server-rendered template (Flask Jinja2 syntax)
+            const username = "{{ username | default('Guest') }}";
+            if (username && username !== 'Guest') {
+                usernameDisplay.textContent = username;
+            }
+
+            try {
+                const response = await fetch('/api/user_change_requests'); // Make the API call
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = '/login'; // Redirect to login if not authenticated
+                        return;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json(); // Parse the JSON response
+
+                // Check if the request was successful and if there's data
+                if (result.status === "success" && result.change_requests && result.change_requests.length > 0) {
+                    loadingMessage.style.display = 'none'; // Hide loading message
+                    noCrMessage.style.display = 'none'; // Ensure no CR message is hidden
+                    crTableContainer.style.display = 'block'; // Show the table container
+
+                    // Clear any existing rows (important if content might refresh)
+                    crTableBody.innerHTML = '';
+
+                    // Iterate over the array of change request objects
+                    result.change_requests.forEach(cr => {
+                        const row = crTableBody.insertRow(); // Create a new table row for each CR
+
+                        // --- THIS IS HOW YOU ACCESS AND DISPLAY INDIVIDUAL FIELDS ---
+                        // For each property in your CR object (e.g., cr.cr_number, cr.description),
+                        // create a table data cell (<td>) and set its text content.
+                        // Ensure the property names (e.g., 'cr_number') match what your Python backend sends.
+                        row.insertCell().textContent = cr.cr_number || 'N/A';
+                        row.insertCell().textContent = cr.cr_ref_number || 'N/A';
+                        row.insertCell().textContent = cr.description || 'N/A';
+                        row.insertCell().textContent = cr.change_date || 'N/A';
+                        row.insertCell().textContent = cr.status || 'N/A';
+                        row.insertCell().textContent = cr.created_at ? new Date(cr.created_at).toLocaleString() : 'N/A';
+                    });
+                } else {
+                    // No change requests found or empty array
+                    loadingMessage.style.display = 'none';
+                    crTableContainer.style.display = 'none'; // Hide the table
+                    noCrMessage.style.display = 'block'; // Show 'no CRs' message
+                    noCrMessage.textContent = 'No Change Requests found for your account.';
+                }
+
+            } catch (error) {
+                console.error('Error fetching Change Requests:', error);
+                loadingMessage.style.display = 'none';
+                crTableContainer.style.display = 'none'; // Hide the table on error
+                noCrMessage.textContent = 'Error loading Change Requests. Please try again.';
+                noCrMessage.style.display = 'block'; // Show error message
+            }
+        });
+    </script>
 </body>
 </html>

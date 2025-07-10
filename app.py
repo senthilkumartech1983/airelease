@@ -131,6 +131,37 @@ class UserManager:
                 self._close_db_connection(conn, cursor)
         return False # Return False if database connection fails
     
+    def getUserCRlist(self, user_id):
+        """
+        Validates a user's credentials against the database.
+        Returns True if credentials are valid, False otherwise.
+        """
+        print(f"getUserCRlist userid : {user_id}")
+        conn = self._get_db_connection()
+        if conn:
+            cursor = conn.cursor(dictionary=True) # Get results as dictionaries
+            try:
+                print(f"before cusrsor userid : {user_id}")
+                cursor.execute("SELECT cr_number,cr_ref_number FROM changerequests WHERE cr_userid = %s", (user_id,))
+                print(f"after cursor userid : {user_id}")
+                crs = cursor.fetchall() # Fetch all rows
+                print(f"after fetchall userid : {user_id}")
+                # Convert Row objects to dictionaries for JSON serialization
+                crs_list = [] # Initialize an empty list
+                for row in crs:
+                # Each 'row' here is already a dictionary because of dictionary=True
+                    crs_list.append(row) 
+                print(f"cr list : {crs_list}")
+                if crs_list:
+                   return crs_list
+                else:
+                   return False
+            except mysql.connector.Error as err:
+                   return False
+            finally:
+                self._close_db_connection(conn, cursor)
+        return False # Return False if database connection fails
+    
     def checkApproverAvailable(self, approverName):
         """
         Validates a user's credentials against the database.
@@ -168,7 +199,7 @@ class UserManager:
                 self._close_db_connection(conn, cursor)
         return False # Return False if database connection fails
     
-    def save_changerequests(self, data):
+    def save_changerequests(self, data, userid):
         """
         Validates a user's credentials against the database.
         Returns True if credentials are valid, False otherwise.
@@ -208,9 +239,9 @@ class UserManager:
             cursor = conn.cursor(dictionary=True) # Get results as dictionaries
             try:
                 sql_insert_query = """
-                                INSERT INTO changerequests (cr_squad_owner,cr_description, cr_ref_number,cr_date, cr_starttime, cr_endtime, cr_approver,cr_creation_date,cr_modify_date)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) """
-                record_tuple = ('Beta',description, incnumber, date,startTime, endTime, approverId,datetime.now(),datetime.now());
+                                INSERT INTO changerequests (cr_squad_owner,cr_description, cr_ref_number,cr_date, cr_starttime, cr_endtime, cr_approver,cr_creation_date,cr_modify_date,cr_userid)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) """
+                record_tuple = ('Beta',description, incnumber, date,startTime, endTime, approverId,datetime.now(),datetime.now(),userid);
                 #cursor.execute("INSERT INTO changerequests (cr_description,cr_ref_number,cr_starttime,cr_endtime,cr_approver) = %s %s %s %s %s", ("abcd ",))
                 cursor.execute(sql_insert_query, record_tuple)
                 conn.commit()
@@ -305,6 +336,7 @@ def process_data():
         action = data.get('action')
         print(f"action is : {action}")
         input1 = data.get('input1')
+        print(f"input is : {input1}")
                 # --- Your Python Logic Here ---
         # Example: Concatenate the inputs or perform a calculation
         if input1 :
@@ -401,9 +433,45 @@ def save():
         print(f"approverId is : {approverId}")
         userid =session['username']
         print(f"user id logged in is : {userid}")
-        user_manager.save_changerequests(data)
+        user_manager.save_changerequests(data,userid)
         return True
+
+@app.route('/display_all', methods=['GET'])
+def display_all():
+    print(f"display all ")
+    user_id = session['username']
+    print(f"display all :{user_id}")
+    crs_list = user_manager.getUserCRlist(user_id)
+    print(f"cr all :{crs_list}")
+
     
+    session['crs_list'] = crs_list
+    return jsonify({"status": "success", "redirect_url": url_for('display_all_page')})
+    
+
+@app.route('/display_all_page')
+def display_all_page():
+    # Retrieve data from the session
+    crs_list_data = session.pop('crs_list', None)
+
+    if crs_list_data:
+        return render_template('dashboard.html', data=crs_list_data)
+    else:
+        # Handle cases where direct access or session expired
+        return redirect(url_for('details')) # Or render an error template
+    
+@app.route('/api/user_change_requests', methods=['GET'])
+def get_user_change_requests():
+    
+    print(f"api all ")
+    user_id = session['username']
+    print(f"api all :{user_id}")
+    crs_list = user_manager.getUserCRlist(user_id)
+
+    # Convert Row objects to dictionaries for JSON serialization
+    crs_list = [dict(row) for row in crs_list]
+    return jsonify({"status": "success", "change_requests": crs_list})
+
 if __name__ == '__main__':
     # Ensure the 'templates' folder exists in the same directory as app.py
     # and index.html is inside that 'templates' folder.
