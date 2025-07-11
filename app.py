@@ -142,7 +142,8 @@ class UserManager:
             cursor = conn.cursor(dictionary=True) # Get results as dictionaries
             try:
                 print(f"before cusrsor userid : {user_id}")
-                cursor.execute("SELECT cr_number,cr_ref_number FROM changerequests WHERE cr_userid = %s", (user_id,))
+                #cursor.execute("SELECT cr_number,cr_ref_number,cr_description,cr_date,cr_starttime,cr_endtime,cr_approver,cr_remarks,cr_status FROM changerequests WHERE cr_userid = %s", (user_id,))
+                cursor.execute("select cr_number,cr_ref_number,cr_description,cr_date,cr_starttime,cr_endtime,cr_approver,cr_remarks,cr_status,fullname from changerequests cr join users u on cr.cr_approver = u.user_id where cr.cr_userid = %s", (user_id,))
                 print(f"after cursor userid : {user_id}")
                 crs = cursor.fetchall() # Fetch all rows
                 print(f"after fetchall userid : {user_id}")

@@ -65,7 +65,7 @@
 </head>
 <body>
     <div class="container">
-        <h2>Welcome to Your Dashboard, <span id="usernameDisplay">Guest</span>!</h2>
+        <h2>Your Change Request Dashboard</h2>
         <p class="message" id="loadingMessage">Loading your Change Requests...</p>
 
         <div id="changeRequestTableContainer" style="display: none;"> <table>
@@ -76,7 +76,8 @@
                         <th>Description</th>
                         <th>Change Date</th>
                         <th>Status</th>
-                        <th>Created At</th>
+                        <th>Approver</th>
+                        <th>Remarks</th>
                     </tr>
                 </thead>
                 <tbody id="crTableBody">
@@ -135,10 +136,11 @@
                         // Ensure the property names (e.g., 'cr_number') match what your Python backend sends.
                         row.insertCell().textContent = cr.cr_number || 'N/A';
                         row.insertCell().textContent = cr.cr_ref_number || 'N/A';
-                        row.insertCell().textContent = cr.description || 'N/A';
-                        row.insertCell().textContent = cr.change_date || 'N/A';
-                        row.insertCell().textContent = cr.status || 'N/A';
-                        row.insertCell().textContent = cr.created_at ? new Date(cr.created_at).toLocaleString() : 'N/A';
+                        row.insertCell().textContent = cr.cr_description || 'N/A';
+                        row.insertCell().textContent = cr.cr_date || 'N/A';
+                        row.insertCell().textContent = cr.cr_status || 'N/A';
+                        row.insertCell().textContent = cr.fullname || 'N/A';
+                        row.insertCell().textContent = cr.cr_remarks || 'N/A';
                     });
                 } else {
                     // No change requests found or empty array

@@ -84,87 +84,43 @@
 <body>
     <div class="container">
         <h2 style="text-align: center; background-color: darkgoldenrod; font-style: normal; color: indigo;">Change Management Automation</h2>
-        <form id="myForm">
-            <!-- <h3>Input:</h3>
-             <input type="text" id="input1" name="input1" placeholder="Enter your free text query here"> -->
-            <textarea id="input1" name="input1" rows="5" cols="50" 
-                  placeholder="Enter your change details...Ex: The file server went down and the ticket for this is INC58219. It caused a major outage for the entire finance department, create a change for the same on 5th July 2025."></textarea>
-
-            <div class="button-container">
-                <button id="action" type="submit" name="action" value="process" style="border:brown">Submit</button>
-                <button onclick="clearInputField()">Reset</button>
-            </div>
-
-            <!-- <h3 style="text-align: center; font-style: normal; color: indigo;">Extracted Results</h3>
-        
-            <div class="output-field-group">
-                <label for="incidentNumberOutput">Incident Number:</label>
-                <input type="text" id="incidentNumberOutput" readonly>
-            </div>
-            <div class="output-field-group">
-                <label for="dateOutput">Date:</label>
-                <input type="text" id="dateOutput" readonly>
-            </div>
-            <div class="output-field-group">
-                <label for="startTimeOutput">Start Time:</label>
-                <input type="text" id="startTimeOutput" readonly>
-            </div>
-            <div class="output-field-group">
-                <label for="endTimeOutput">End Time:</label>
-                <input type="text" id="endTimeOutput" readonly>
-            </div>
-            <div class="output-field-group">
-                <label for="descriptionOutput">Description:</label>
-                <textarea id="descriptionOutput" style="background-color: #f0f0f0;" rows="3" readonly></textarea> 
-            </div>
-            <div class="output-field-group">
-                <label for="approverOutput">Approver:</label>
-                <input type="text" id="approverOutput" readonly>
-            </div>
-            <div class="button-container">
-                <button id="action" type="submit" name="action" value="save" style="border:brown">Create CR</button>
-            </div>
-            <button type="submit">Submit</button>
-            <button onclick="clearInputField()">
-                 Click here to clear
-            </button> -->
-            <script>
-                 function clearInputField() {
-                     document.getElementById('myForm').reset();
-                }
-            </script>
-            
+        <form id="saveForm" action="/process_data" method="post">
+            <textarea id="input1" name="change_details" rows="5" cols="50"
+                      placeholder="Enter your change details for saving..."></textarea>
+            <button type="submit">Save Change</button>
         </form>
 
-        <!-- <h3 style="text-align: center; font-style: normal; color: indigo;">Results</h3>
-        <div id="output">
-            </div> -->
+        <hr> <form id="displayForm" action="/display_all" method="get">
+            <p>Click below to view all Change Requests.</p>
+            <button type="submit">Display All CRs</button>
+        </form>
+
+        <button type="button" onclick="clearAllFields()">Reset All</button>
+
+        <div id="output"></div>
     </div>
 
     <script>
-        const now = new Date();
-        document.getElementById('myForm').addEventListener('submit', async function(event) {
-            event.preventDefault(); // Prevent default form submission
-
+        document.getElementById('saveForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            // const changeDetails = document.getElementById('input1').value;
+            // const data = { change_details: changeDetails };
             const input1 = document.getElementById('input1').value;
-            const action = document.getElementById('action').value;
+            
             
             // Prepare data to send to Python
             const data = {
-                input1: input1,
-                action: action
+                input1: input1
+                
             };
 
             try {
-                // Send data to your Python backend
-                // Replace '/process_data' with the actual endpoint of your Python application
-                const response = await fetch('/process_data', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                const response = await fetch(event.target.action, { // Use form's action attribute
+                    method: event.target.method, // Use form's method attribute
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
+        
 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -183,6 +139,39 @@
                 //document.getElementById('approverOutput').value = result.approver || 'N/A';
                 // --- END MODIFICATION ---
                 // --- THIS IS THE CRUCIAL PART TO ADD BACK ---
+                if (result.status === "success" && result.redirect_url) {
+                    window.location.href = result.redirect_url; // Redirect the browser to /save_page
+                } else {
+                    // Handle unexpected response from server
+                    console.error('Unexpected response:', result);
+                    document.getElementById('output').textContent = 'Unexpected server response. Check console for details.';
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('output').textContent = 'Unexpected error occurred, try again or rephrase your prompt';
+            }
+        });
+
+        document.getElementById('displayForm').addEventListener('submit', async function(event) {
+            event.preventDefault(); // Prevent default submission if fetching JSON
+
+            // If you want to redirect directly, uncomment this and comment out fetch
+            // window.location.href = event.target.action;
+            // return;
+
+            try {
+                const response = await fetch(event.target.action, {
+                    method: event.target.method,
+                    headers: { 'Accept': 'application/json' } // Request JSON
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                // Assuming result is an array of CRs or a string to display
                 if (result.status === "success" && result.redirect_url) {
                     window.location.href = result.redirect_url; // Redirect the browser to /save_page
                 } else {
