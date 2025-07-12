@@ -5,23 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Change Request Dashboard</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f4f4f4;
+        /* ... (your existing CSS) ... */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #4CAF50; /* Green */
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
         }
-        .container {
-            max-width: 900px; /* Increased max-width for better table display */
-            margin: 20px auto;
-            padding: 20px;
-            background-color: #fff;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        .notification.show {
+            display: block;
+            opacity: 1;
         }
-        h2 {
-            color: #333;
-            text-align: center;
-            margin-bottom: 20px;
+        .notification.error {
+            background-color: #f44336; /* Red */
         }
         table {
             width: 100%;
@@ -32,43 +35,73 @@
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
-            word-wrap: break-word; /* Ensures long text breaks to new lines */
         }
         th {
+            background-color: #f2f2f2;
+        }
+        .status-select {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .status-select:disabled {
+            background-color: #f0f0f0;
+            cursor: not-allowed;
+        }
+        .status-text {
+            font-weight: bold;
+        }
+        /* Added style for editable remarks input */
+        .remarks-input {
+            width: calc(100% - 10px); /* Adjust width for padding */
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box; /* Include padding and border in the element's total width and height */
+        }
+        .remarks-input:disabled { /* Style for disabled remarks input */
+            background-color: #f0f0f0;
+            cursor: not-allowed;
+        }
+        .container {
+            width: 80%;
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background-color: #fff;
+        }
+        .back-button {
+            margin-top: 20px;
+            padding: 10px 15px;
             background-color: #007bff;
             color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
         }
-        tr:nth-child(even) {
-            background-color: #f2f2f2;
+        .back-button:hover {
+            background-color: #0056b3;
         }
         .message {
             text-align: center;
-            color: #666;
+            font-style: italic;
+            color: #555;
             margin-top: 20px;
-        }
-        .back-button {
-            display: block;
-            width: fit-content;
-            margin: 20px auto 0;
-            background-color: #6c757d;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            text-decoration: none; /* For anchor tags if used */
-        }
-        .back-button:hover {
-            background-color: #5a6268;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>Your Change Request Dashboard</h2>
+        <p style="text-align: right;">Welcome, <strong id="usernameDisplay">Guest</strong>!</p>
+        <h2 style="text-align: center;">Change Requests Dashboard</h2>
         <p class="message" id="loadingMessage">Loading your Change Requests...</p>
 
-        <div id="changeRequestTableContainer" style="display: none;"> <table>
+        <div id="changeRequestTableContainer" style="display: none;">
+            <table>
                 <thead>
                     <tr>
                         <th>CR Number</th>
@@ -81,7 +114,7 @@
                     </tr>
                 </thead>
                 <tbody id="crTableBody">
-                    </tbody>
+                </tbody>
             </table>
         </div>
 
@@ -90,6 +123,8 @@
         <button class="back-button" onclick="location.href='/'">Go Back to Details Page</button>
     </div>
 
+    <div id="notification" class="notification"></div>
+
     <script>
         document.addEventListener('DOMContentLoaded', async function() {
             const usernameDisplay = document.getElementById('usernameDisplay');
@@ -97,65 +132,164 @@
             const noCrMessage = document.getElementById('noCrMessage');
             const crTableBody = document.getElementById('crTableBody');
             const crTableContainer = document.getElementById('changeRequestTableContainer');
+            const notificationElem = document.getElementById('notification');
 
-            // Set username from the server-rendered template (Flask Jinja2 syntax)
-            const username = "{{ username | default('Guest') }}";
+            const isAdmin = {{ isadmin | tojson }}; 
+            const username = {{ username | tojson }};
+
             if (username && username !== 'Guest') {
                 usernameDisplay.textContent = username;
             }
 
+            const possibleStatuses = [
+                "Pending Approval",
+                "Approved",
+                "Rejected",
+                "In Progress", 
+                "Completed",
+                "Cancelled"
+            ];
+
+            function showNotification(message, isError = false) {
+                notificationElem.textContent = message;
+                notificationElem.classList.remove('error');
+                if (isError) {
+                    notificationElem.classList.add('error');
+                }
+                notificationElem.classList.add('show');
+                setTimeout(() => {
+                    notificationElem.classList.remove('show');
+                }, 3000);
+            }
+
             try {
-                const response = await fetch('/api/user_change_requests'); // Make the API call
+                const response = await fetch('/api/user_change_requests');
 
                 if (!response.ok) {
                     if (response.status === 401) {
-                        window.location.href = '/login'; // Redirect to login if not authenticated
+                        window.location.href = '/login';
                         return;
                     }
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                const result = await response.json(); // Parse the JSON response
+                const result = await response.json();
 
-                // Check if the request was successful and if there's data
+                console.log("isAdmin:", isAdmin); 
+                console.log("API Response:", result); 
+                console.log("Change Requests Array:", result.change_requests); 
+
                 if (result.status === "success" && result.change_requests && result.change_requests.length > 0) {
-                    loadingMessage.style.display = 'none'; // Hide loading message
-                    noCrMessage.style.display = 'none'; // Ensure no CR message is hidden
-                    crTableContainer.style.display = 'block'; // Show the table container
-
-                    // Clear any existing rows (important if content might refresh)
+                    loadingMessage.style.display = 'none';
+                    noCrMessage.style.display = 'none';
+                    crTableContainer.style.display = 'block';
                     crTableBody.innerHTML = '';
 
-                    // Iterate over the array of change request objects
                     result.change_requests.forEach(cr => {
-                        const row = crTableBody.insertRow(); // Create a new table row for each CR
+                        const row = crTableBody.insertRow();
 
-                        // --- THIS IS HOW YOU ACCESS AND DISPLAY INDIVIDUAL FIELDS ---
-                        // For each property in your CR object (e.g., cr.cr_number, cr.description),
-                        // create a table data cell (<td>) and set its text content.
-                        // Ensure the property names (e.g., 'cr_number') match what your Python backend sends.
                         row.insertCell().textContent = cr.cr_number || 'N/A';
                         row.insertCell().textContent = cr.cr_ref_number || 'N/A';
                         row.insertCell().textContent = cr.cr_description || 'N/A';
                         row.insertCell().textContent = cr.cr_date || 'N/A';
-                        row.insertCell().textContent = cr.cr_status || 'N/A';
-                        row.insertCell().textContent = cr.fullname || 'N/A';
-                        row.insertCell().textContent = cr.cr_remarks || 'N/A';
+
+                        const statusCell = row.insertCell();
+                        const isEditableRow = isAdmin && cr.cr_status === "Pending Approval"; 
+
+                        // This is the Approver column, which is row.insertCell() directly before remarks.
+                        // We need to create it here to ensure proper order.
+                        const approverCell = row.insertCell(); 
+                        approverCell.textContent = cr.fullname || 'N/A'; // Assign approver value
+
+                        // Remarks Cell Logic: Always render the input, but enable/disable based on isEditableRow
+                        const remarksCell = row.insertCell();
+                        const remarksInput = document.createElement('input');
+                        remarksInput.type = 'text'; 
+                        remarksInput.className = 'remarks-input';
+                        remarksInput.value = cr.cr_remarks || ''; 
+                        remarksInput.dataset.crNumber = cr.cr_number; 
+                        remarksInput.id = `remarks-${cr.cr_number}`; // Assign an ID to the remarks input
+                        remarksInput.disabled = !isEditableRow; // Disable if not editable
+
+                        remarksCell.appendChild(remarksInput); // Always append the input element
+
+                        if (isEditableRow) { 
+                            const select = document.createElement('select');
+                            select.className = 'status-select';
+                            select.dataset.crNumber = cr.cr_number;
+                            select.dataset.remarksInputId = `remarks-${cr.cr_number}`; // Link to remarks input
+
+                            possibleStatuses.forEach(status => {
+                                const option = document.createElement('option');
+                                option.value = status;
+                                option.textContent = status;
+                                if (status === cr.cr_status) {
+                                    option.selected = true;
+                                }
+                                select.appendChild(option);
+                            });
+
+                            select.addEventListener('change', async function() {
+                                const newStatus = this.value;
+                                const currentCrNumber = this.dataset.crNumber;
+                                
+                                const associatedRemarksInput = document.getElementById(this.dataset.remarksInputId);
+                                const newRemarks = associatedRemarksInput ? associatedRemarksInput.value : '';
+
+                                showNotification(`Updating CR ${currentCrNumber} status to ${newStatus} and remarks...`);
+
+                                try {
+                                    const updateResponse = await fetch('/api/update_cr_status', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json'
+                                        },
+                                        body: JSON.stringify({
+                                            cr_number: currentCrNumber,
+                                            new_status: newStatus,
+                                            new_remarks: newRemarks 
+                                        })
+                                    });
+
+                                    const updateResult = await updateResponse.json();
+
+                                    if (updateResponse.ok && updateResult.status === 'success') {
+                                        showNotification(`Successfully updated CR ${currentCrNumber} status to ${newStatus} and remarks.`, false);
+                                        if (newStatus !== "Pending Approval") {
+                                            select.disabled = true;
+                                            remarksInput.disabled = true; 
+                                        }
+                                    } else {
+                                        const errorMessage = updateResult.message || `Failed to update CR ${currentCrNumber} status and remarks.`;
+                                        showNotification(errorMessage, true);
+                                        this.value = cr.cr_status; 
+                                    }
+                                } catch (error) {
+                                    console.error('Error updating CR:', error);
+                                    showNotification(`Network error or problem updating CR ${currentCrNumber}.`, true);
+                                    this.value = cr.cr_status; 
+                                }
+                            });
+                            statusCell.appendChild(select);
+                        } else {
+                            statusCell.textContent = cr.cr_status || 'N/A';
+                            statusCell.classList.add('status-text');
+                        }
                     });
                 } else {
-                    // No change requests found or empty array
                     loadingMessage.style.display = 'none';
-                    crTableContainer.style.display = 'none'; // Hide the table
-                    noCrMessage.style.display = 'block'; // Show 'no CRs' message
-                    noCrMessage.textContent = 'No Change Requests found for your account.';
+                    crTableContainer.style.display = 'none';
+                    noCrMessage.textContent = result.message || 'No Change Requests found for your account.';
+                    noCrMessage.style.display = 'block';
                 }
 
             } catch (error) {
                 console.error('Error fetching Change Requests:', error);
                 loadingMessage.style.display = 'none';
-                crTableContainer.style.display = 'none'; // Hide the table on error
+                crTableContainer.style.display = 'none';
                 noCrMessage.textContent = 'Error loading Change Requests. Please try again.';
-                noCrMessage.style.display = 'block'; // Show error message
+                noCrMessage.style.display = 'block';
+                showNotification('Error loading Change Requests. Please check console.', true);
             }
         });
     </script>

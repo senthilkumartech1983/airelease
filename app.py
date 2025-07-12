@@ -117,7 +117,7 @@ class UserManager:
         if conn:
             cursor = conn.cursor(dictionary=True) # Get results as dictionaries
             try:
-                cursor.execute("SELECT pass FROM users WHERE user_id = %s", (username,))
+                cursor.execute("SELECT pass,isadmin FROM users WHERE user_id = %s", (username,))
                 user_record = cursor.fetchone()
                 print(f"DB result for user '{username}': {user_record}")
                 if user_record and user_record['pass'] == password:
@@ -296,9 +296,12 @@ def login():
         password = request.form['password']
 
         # Use the UserManager to validate credentials
-        if user_manager.validate_user(username, password):
-            session['username'] = username 
-            flash('Login successful!', 'success') 
+        user_info = user_manager.validate_user(username, password) # Get the full user_info
+        if user_info:
+            session['username'] = username
+            # Store the is_admin status in the session
+            session['isadmin'] = user_info.get('isadmin', False) # Default to False if column not found
+            flash('Login successful!', 'success')
             return redirect(url_for('details'))
         else:
             flash('Invalid username or password.', 'danger')
@@ -453,13 +456,36 @@ def display_all():
 @app.route('/display_all_page')
 def display_all_page():
     # Retrieve data from the session
-    crs_list_data = session.pop('crs_list', None)
-
-    if crs_list_data:
-        return render_template('dashboard.html', data=crs_list_data)
-    else:
+    #crs_list_data = session.pop('crs_list', None)
+    #is_admin_user = session.get('isadmin', False) 
+    #if crs_list_data:
+    #    return render_template('dashboard.html', data=crs_list_data, isadmin=is_admin_user)
+    #else:
         # Handle cases where direct access or session expired
-        return redirect(url_for('details')) # Or render an error template
+    #    return redirect(url_for('details')) # Or render an error template
+
+    # Retrieve data from the session
+    crs_list_data = session.pop('crs_list', None)
+    is_admin_user = session.get('isadmin', False)
+    logged_in_username = session.get('username', 'Guest') # Get username from session
+    print(f"is_admin_user before render :{is_admin_user}")
+    if crs_list_data:
+        return render_template(
+            'dashboard.html',
+            data=crs_list_data,
+            isadmin=is_admin_user,
+            username=logged_in_username # Pass the username here
+        )
+    else:
+        # If no CR list data, you still want to render the dashboard,
+        # but indicate no CRs. It's better to pass isadmin and username always.
+        return render_template(
+            'dashboard.html',
+            data=[], # Pass an empty list if no CRs to prevent errors in template
+            isadmin=is_admin_user,
+            username=logged_in_username,
+            no_crs_found=True # Optional: a flag to display a specific message
+        )
     
 @app.route('/api/user_change_requests', methods=['GET'])
 def get_user_change_requests():
@@ -472,6 +498,77 @@ def get_user_change_requests():
     # Convert Row objects to dictionaries for JSON serialization
     crs_list = [dict(row) for row in crs_list]
     return jsonify({"status": "success", "change_requests": crs_list})
+
+@app.route('/api/update_cr_status', methods=['POST'])
+def update_cr_status():
+    if not session.get('username'):
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+
+    if not session.get('isadmin', False):
+        return jsonify({"status": "error", "message": "Permission denied: Not an administrator."}), 403
+
+    data = request.get_json()
+    cr_number = data.get('cr_number')
+    new_status = data.get('new_status')
+    new_remarks = data.get('new_remarks') # This is where you get the remarks from the frontend
+
+    # --- Debugging: Print received data ---
+    print(f"Backend received: CR Number={cr_number}, New Status={new_status}, New Remarks={new_remarks}")
+    # --- End Debugging ---
+
+    if not cr_number or not new_status:
+        return jsonify({"status": "error", "message": "Missing CR number or new status"}), 400
+    
+    # Ensure new_remarks is not None; if it's not sent or is null, treat as empty string
+    new_remarks = new_remarks if new_remarks is not None else "" 
+
+    conn = None 
+    cursor = None 
+    try:
+        conn = user_manager._get_db_connection() # Assuming user_manager handles database connections
+        if not conn:
+            return jsonify({"status": "error", "message": "Failed to connect to database"}), 500
+            
+        cursor = conn.cursor(dictionary=True) 
+
+        # 1. Fetch the current status of the CR to enforce the "Pending Approval" rule
+        cursor.execute("SELECT cr_status FROM changerequests WHERE cr_number = %s", (cr_number,))
+        cr_record = cursor.fetchone()
+
+        if not cr_record:
+            return jsonify({"status": "error", "message": "Change Request not found."}), 404
+
+        current_status = cr_record['cr_status']
+        
+        # 2. Conditional check: Only allow update if current status is "Pending Approval"
+        if current_status != "Pending Approval":
+            return jsonify({"status": "error", "message": f"CR status or remarks cannot be updated from '{current_status}'. Only 'Pending Approval' can be changed."}), 403 # Forbidden
+
+        # 3. If allowed, proceed with the combined update
+        # This SQL query updates BOTH cr_status and cr_remarks in a single transaction
+        sql = "UPDATE changerequests SET cr_status = %s, cr_remarks = %s, cr_modify_date = %s WHERE cr_number = %s"
+        cursor.execute(sql, (new_status, new_remarks, datetime.now(), cr_number))
+        conn.commit()
+
+        if cursor.rowcount > 0:
+            return jsonify({"status": "success", "message": "CR status and remarks updated successfully"})
+        else:
+            return jsonify({"status": "error", "message": "CR not found or no change made."}), 404
+    except mysql.connector.Error as err:
+        print(f"Database Error updating CR: {err}") # More specific error message
+        return jsonify({"status": "error", "message": f"Database error: {err}"}), 500
+    except Exception as e: # Catch any other unexpected errors
+        print(f"An unexpected error occurred: {e}")
+        return jsonify({"status": "error", "message": f"An unexpected server error occurred: {e}"}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            user_manager._close_db_connection(conn, cursor) 
+    return jsonify({"status": "error", "message": "Failed to connect to database"}), 500
+
+# Remember to remove any separate /api/update_cr_remarks route if it still exists.
+
 
 if __name__ == '__main__':
     # Ensure the 'templates' folder exists in the same directory as app.py
